@@ -162,14 +162,48 @@ fn printUsage(prog_name: []const u8) noreturn {
         \\  Multiple client sessions are multiplexed over these connections.
         \\
         \\Examples:
-        \\  {s} keygen -o secret.key
-        \\  {s} kemgen -o tmp/server
-        \\  {s} server -p :3000,127.0.0.1:3001 -k secret.key
-        \\  {s} client -p :4000,192.168.1.100:3000 -k secret.key
-        \\  {s} client -p :4000,192.168.1.100:3000 -k secret.key -n 8
-        \\  {s} server -p :3000,127.0.0.1:3001 -p :3002,127.0.0.1:3003 -k secret.key
         \\
-    , .{ prog_name, prog_name, prog_name, prog_name, prog_name, prog_name, prog_name });
+        \\  Generate keys:
+        \\    {s} keygen -o secret.key                   Generate symmetric key
+        \\    {s} kemgen -o server                       Generate KEM keypair (server.pub + server.key)
+        \\
+        \\  Basic tunnel (symmetric encryption only):
+        \\    {s} server -p :3000,127.0.0.1:3001 -k secret.key
+        \\    {s} client -p :4000,server.example.com:3000 -k secret.key
+        \\
+        \\  Post-quantum secure tunnel (KEM + symmetric):
+        \\    {s} server -p :3000,127.0.0.1:3001 -k secret.key --kemsecret server.key
+        \\    {s} client -p :4000,server.example.com:3000 -k secret.key --kempublic server.pub
+        \\
+        \\  Multiple backends (replicas):
+        \\    {s} server -p :3000,10.0.0.1:3001 -p :3001,10.0.0.2:3001 -p :3002,10.0.0.3:3001 -k secret.key
+        \\    {s} client -p :4000,srv:3000 -p :4001,srv:3001 -p :4002,srv:3002 -k secret.key
+        \\
+        \\  High-throughput client (more pool connections):
+        \\    {s} client -p :4000,server:3000 -k secret.key -n 16 -m 5000
+        \\
+        \\  With cluster ID validation (rejects mismatched traffic):
+        \\    {s} server -p :3000,127.0.0.1:3001 -k secret.key -c 12345
+        \\    {s} client -p :4000,server:3000 -k secret.key -c 12345
+        \\
+        \\  Production (minimal logging):
+        \\    {s} server -p :3000,127.0.0.1:3001 -k secret.key --log-level err
+        \\
+    , .{
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+        prog_name,
+    });
     std.process.exit(0);
 }
 
@@ -189,8 +223,10 @@ fn parseArgs() Config {
 
     var args = std.process.args();
     const prog_name = args.next() orelse "tigertunnel";
+    const first_arg = args.next() orelse printUsage(prog_name);
 
-    while (args.next()) |arg| {
+    var current_arg: ?[]const u8 = first_arg;
+    while (current_arg) |arg| : (current_arg = args.next()) {
         if (mem.eql(u8, arg, "-h") or mem.eql(u8, arg, "--help")) {
             printUsage(prog_name);
         } else if (mem.eql(u8, arg, "client")) {
