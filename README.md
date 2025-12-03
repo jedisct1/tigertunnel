@@ -120,4 +120,8 @@ tigertunnel server -p :3000,127.0.0.1:3001 -k secret.key -m 500
 
 # Verbose logging
 tigertunnel server -p :3000,127.0.0.1:3001 -k secret.key --log-level debug
+
+# Set cluster ID (connections for different clusters will be immediately rejected)
+tigertunnel client -p :4000,server:3000 -k secret.key -c 12345
+tigertunnel server -p :3000,127.0.0.1:3001 -k secret.key -c 12345
 ```
