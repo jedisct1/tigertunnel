@@ -19,7 +19,7 @@ pub fn main() !void {
     }
 
     // Initialize threaded I/O
-    var threaded = Io.Threaded.init(allocator);
+    var threaded = Io.Threaded.init(allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
 

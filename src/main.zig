@@ -369,16 +369,16 @@ pub fn main() !void {
     const config = parseArgs();
 
     if (config.mode == .keygen) {
-        runKeygen(config);
+        runKeygen(allocator, config);
         return;
     }
 
     if (config.mode == .kemgen) {
-        runKemgen(config);
+        runKemgen(allocator, config);
         return;
     }
 
-    var threaded = Threaded.init(allocator);
+    var threaded = Threaded.init(allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
@@ -405,7 +405,7 @@ pub fn main() !void {
     }
 }
 
-fn runKeygen(config: Config) void {
+fn runKeygen(allocator: Allocator, config: Config) void {
     const output_path = config.output_path orelse {
         fatal("Output path (-o) is required for keygen mode", .{});
     };
@@ -416,19 +416,23 @@ fn runKeygen(config: Config) void {
     var buf: [256]u8 = undefined;
     const content = crypto.formatKeyFile(&buf, key_id, &key);
 
-    const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
+    var threaded = Threaded.init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const file = Io.Dir.cwd().createFile(io, output_path, .{}) catch |err| {
         fatal("Failed to create '{s}': {}", .{ output_path, err });
     };
-    defer file.close();
+    defer file.close(io);
 
-    file.writeAll(content) catch |err| {
+    file.writeStreamingAll(io, content) catch |err| {
         fatal("Failed to write to '{s}': {}", .{ output_path, err });
     };
 
     std.debug.print("Generated key {} -> {s}\n", .{ key_id, output_path });
 }
 
-fn runKemgen(config: Config) void {
+fn runKemgen(allocator: Allocator, config: Config) void {
     const output_path = config.output_path orelse {
         fatal("Output path (-o) is required for kemgen mode", .{});
     };
@@ -448,27 +452,31 @@ fn runKemgen(config: Config) void {
         fatal("Output path too long", .{});
     };
 
+    var threaded = Threaded.init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
     var pub_buf: [crypto.kem_public_key_file_buffer_size]u8 = undefined;
     const pub_content = crypto.formatKemPublicKeyFile(&pub_buf, key_id, &public_key);
 
-    const pub_file = std.fs.cwd().createFile(pub_path, .{}) catch |err| {
+    const pub_file = Io.Dir.cwd().createFile(io, pub_path, .{}) catch |err| {
         fatal("Failed to create '{s}': {}", .{ pub_path, err });
     };
-    defer pub_file.close();
+    defer pub_file.close(io);
 
-    pub_file.writeAll(pub_content) catch |err| {
+    pub_file.writeStreamingAll(io, pub_content) catch |err| {
         fatal("Failed to write to '{s}': {}", .{ pub_path, err });
     };
 
     var sec_buf: [crypto.kem_secret_key_file_buffer_size]u8 = undefined;
     const sec_content = crypto.formatKemSecretKeyFile(&sec_buf, key_id, &secret_key);
 
-    const sec_file = std.fs.cwd().createFile(sec_path, .{}) catch |err| {
+    const sec_file = Io.Dir.cwd().createFile(io, sec_path, .{}) catch |err| {
         fatal("Failed to create '{s}': {}", .{ sec_path, err });
     };
-    defer sec_file.close();
+    defer sec_file.close(io);
 
-    sec_file.writeAll(sec_content) catch |err| {
+    sec_file.writeStreamingAll(io, sec_content) catch |err| {
         fatal("Failed to write to '{s}': {}", .{ sec_path, err });
     };
 

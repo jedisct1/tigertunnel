@@ -178,7 +178,7 @@ pub const ClientMuxSession = struct {
         // Use std.Io.Queue which properly blocks until data is available
         const response = self.stream.getResponse(self.io) catch |err| {
             return switch (err) {
-                error.Canceled => error.EndOfStream,
+                error.Canceled, error.Closed => error.EndOfStream,
             };
         };
         return response.data;

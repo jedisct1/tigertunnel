@@ -88,9 +88,11 @@ pub fn readMuxHeader(reader: *Io.Reader) Error!MuxHeader {
         return error.InvalidMagic;
     }
 
-    _ = std.meta.intToEnum(FrameType, @intFromEnum(header.frame_type)) catch {
+    // Validate that the frame_type value is a valid enum member
+    const frame_type_raw: u8 = @intFromEnum(header.frame_type);
+    if (frame_type_raw > @intFromEnum(FrameType.stream_close)) {
         return error.InvalidFrameType;
-    };
+    }
 
     return header;
 }
@@ -117,9 +119,10 @@ pub fn readMuxHeaderAndFrameHeader(
         return error.InvalidMagic;
     }
 
-    _ = std.meta.intToEnum(FrameType, @intFromEnum(mux_header.frame_type)) catch {
+    const frame_type_raw: u8 = @intFromEnum(mux_header.frame_type);
+    if (frame_type_raw > @intFromEnum(FrameType.stream_close)) {
         return error.InvalidFrameType;
-    };
+    }
 
     if (mux_header.frame_type != .data) {
         return .{ .mux_header = mux_header, .frame_size = 0 };
@@ -556,10 +559,11 @@ pub fn readServerHello(
     var status_buf: [1]u8 = undefined;
     try reader.interface.readSliceAll(&status_buf);
 
-    const status: HandshakeStatus = std.meta.intToEnum(HandshakeStatus, status_buf[0]) catch {
+    if (status_buf[0] > @intFromEnum(HandshakeStatus.timestamp_invalid)) {
         log.err("Invalid handshake status: {}", .{status_buf[0]});
         return error.KeyRejected;
-    };
+    }
+    const status: HandshakeStatus = @enumFromInt(status_buf[0]);
 
     if (status != .ok) {
         log.err("Handshake rejected with status: {s}", .{@tagName(status)});
@@ -700,11 +704,13 @@ pub const Stream = struct {
         self.response_queue.putOneUncancelable(io, .{
             .data = data,
             .allocator = self.allocator,
-        });
+        }) catch |err| switch (err) {
+            error.Closed => unreachable, // Queue should never be closed while pushing
+        };
     }
 
     /// Get a response from the queue (blocks if empty)
-    pub fn getResponse(self: *Stream, io: Io) Io.Cancelable!Response {
+    pub fn getResponse(self: *Stream, io: Io) (Io.Cancelable || Io.QueueClosedError)!Response {
         return self.response_queue.getOne(io);
     }
 
