@@ -210,7 +210,7 @@ fn printUsage(prog_name: []const u8) noreturn {
 /// Static buffer for proxy pairs (avoids allocator in arg parsing)
 var proxy_pairs_buf: [max_proxy_pairs]ProxyPair = undefined;
 
-fn parseArgs() Config {
+fn parseArgs(init_args: std.process.Args) Config {
     var proxy_pair_count: usize = 0;
     var key_file: ?[]const u8 = null;
     var kem_public_file: ?[]const u8 = null;
@@ -221,7 +221,7 @@ fn parseArgs() Config {
     var max_sessions: u32 = 1000;
     var output_path: ?[]const u8 = null;
 
-    var args = std.process.args();
+    var args = std.process.Args.Iterator.init(init_args);
     const prog_name = args.next() orelse "tigertunnel";
     const first_arg = args.next() orelse printUsage(prog_name);
 
@@ -361,26 +361,22 @@ fn parseArgs() Config {
     };
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
-    const config = parseArgs();
+    const config = parseArgs(init.minimal.args);
 
     if (config.mode == .keygen) {
-        runKeygen(allocator, config);
+        runKeygen(init.io, config);
         return;
     }
 
     if (config.mode == .kemgen) {
-        runKemgen(allocator, config);
+        runKemgen(init.io, config);
         return;
     }
 
-    var threaded = Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
+    const io = init.io;
 
     log.info("Starting tigertunnel in {s} mode with {} proxy pair(s)", .{ @tagName(config.mode), config.proxy_pairs.len });
     for (config.proxy_pairs, 0..) |pair, i| {
@@ -405,7 +401,7 @@ pub fn main() !void {
     }
 }
 
-fn runKeygen(allocator: Allocator, config: Config) void {
+fn runKeygen(io: Io, config: Config) void {
     const output_path = config.output_path orelse {
         fatal("Output path (-o) is required for keygen mode", .{});
     };
@@ -415,10 +411,6 @@ fn runKeygen(allocator: Allocator, config: Config) void {
 
     var buf: [256]u8 = undefined;
     const content = crypto.formatKeyFile(&buf, key_id, &key);
-
-    var threaded = Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
 
     const file = Io.Dir.cwd().createFile(io, output_path, .{}) catch |err| {
         fatal("Failed to create '{s}': {}", .{ output_path, err });
@@ -432,7 +424,7 @@ fn runKeygen(allocator: Allocator, config: Config) void {
     std.debug.print("Generated key {} -> {s}\n", .{ key_id, output_path });
 }
 
-fn runKemgen(allocator: Allocator, config: Config) void {
+fn runKemgen(io: Io, config: Config) void {
     const output_path = config.output_path orelse {
         fatal("Output path (-o) is required for kemgen mode", .{});
     };
@@ -451,10 +443,6 @@ fn runKemgen(allocator: Allocator, config: Config) void {
     const sec_path = std.fmt.bufPrint(&sec_path_buf, "{s}.key", .{output_path}) catch {
         fatal("Output path too long", .{});
     };
-
-    var threaded = Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
 
     var pub_buf: [crypto.kem_public_key_file_buffer_size]u8 = undefined;
     const pub_content = crypto.formatKemPublicKeyFile(&pub_buf, key_id, &public_key);
@@ -654,7 +642,7 @@ fn runMuxClient(
             log.err("Pair {}: Failed to spawn proxy pair thread: {}", .{ i, err });
         };
     }
-    group.wait(io);
+    group.await(io) catch {};
 }
 
 /// Context for a server proxy pair running in its own thread
@@ -754,5 +742,5 @@ fn runMuxServer(
             log.err("Pair {}: Failed to spawn server proxy pair thread: {}", .{ i, err });
         };
     }
-    group.wait(io);
+    group.await(io) catch {};
 }

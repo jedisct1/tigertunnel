@@ -98,7 +98,7 @@ fn runClient(
     num_messages: u32,
     result: *TestResult,
 ) void {
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 
@@ -298,7 +298,7 @@ fn stressHighThroughput(allocator: mem.Allocator) !void {
 
     std.debug.print("Messages: {}, Payload size: {} bytes\n", .{ num_messages, payload_size });
 
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 
@@ -379,7 +379,7 @@ fn stressRapidConnectDisconnect(allocator: mem.Allocator) !void {
     const num_cycles: u32 = 100;
     std.debug.print("Connection cycles: {}\n", .{num_cycles});
 
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 
@@ -457,7 +457,7 @@ fn stressLargePayloads(allocator: mem.Allocator) !void {
 
     const payload_sizes = [_]u32{ 64 * 1024, 128 * 1024, 256 * 1024, 512 * 1024, 768 * 1024 };
 
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 
@@ -537,7 +537,7 @@ fn stressBurstTraffic(allocator: mem.Allocator) !void {
 
     std.debug.print("Bursts: {}, Messages/burst: {}\n", .{ num_bursts, burst_size });
 
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 
@@ -608,7 +608,7 @@ fn stressBurstTraffic(allocator: mem.Allocator) !void {
 var mock_server_running = std.atomic.Value(bool).init(false);
 
 fn runMockServer(allocator: mem.Allocator) void {
-    var io_backend = Io.Threaded.init(allocator, .{});
+    var io_backend = Io.Threaded.init(allocator, .{ .environ = .empty });
     defer io_backend.deinit();
     const io = io_backend.io();
 

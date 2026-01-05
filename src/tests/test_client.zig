@@ -6,22 +6,17 @@ const Io = std.Io;
 const header_size: u32 = 256;
 const max_frame_size: u32 = 1024 * 1024;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
     // Parse port from args
-    var args = std.process.args();
+    var args = std.process.Args.Iterator.init(init.minimal.args);
     _ = args.next(); // skip program name
     if (args.next()) |port_str| {
         target_port = std.fmt.parseInt(u16, port_str, 10) catch 3000;
     }
 
-    // Initialize threaded I/O
-    var threaded = Io.Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
+    const io = init.io;
 
     std.debug.print("=== Multi-connection test (port {}) ===\n", .{target_port});
 
