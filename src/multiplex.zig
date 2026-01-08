@@ -271,7 +271,7 @@ pub fn sendClientHello(stream: net.Stream, io: Io, key_id: u64, shared_key: *con
     mem.writeInt(u64, buf[2..10], key_id, .little);
 
     var client_random: [16]u8 = undefined;
-    std.crypto.random.bytes(&client_random);
+    io.random(&client_random);
     @memcpy(buf[10..26], &client_random);
 
     const ts = std.posix.clock_gettime(.REALTIME) catch @panic("clock_gettime failed");
@@ -338,7 +338,7 @@ pub fn sendKemClientHello(
     mem.writeInt(u64, buf[10..18], kem_key_id, .little);
 
     var client_random: [16]u8 = undefined;
-    std.crypto.random.bytes(&client_random);
+    io.random(&client_random);
     @memcpy(buf[18..34], &client_random);
 
     const ts = std.posix.clock_gettime(.REALTIME) catch @panic("clock_gettime failed");
@@ -357,7 +357,7 @@ pub fn sendKemClientHello(
     @memcpy(buf[42..74], &hash);
 
     const public_key = crypto.HybridKem.PublicKey.fromBytes(kem_public_key);
-    const encap = public_key.encaps(null) catch {
+    const encap = public_key.encaps(io) catch {
         log.err("KEM encapsulation failed", .{});
         return error.WriteFailed;
     };
@@ -516,7 +516,7 @@ pub fn sendServerHello(
 
     if (status == .ok) {
         var server_random: [16]u8 = undefined;
-        std.crypto.random.bytes(&server_random);
+        io.random(&server_random);
 
         const auth_hash = computeAuthHash(shared_key, client_random, &server_random, cluster_id);
 
@@ -622,7 +622,7 @@ pub fn sendKemServerHello(
         };
 
         var server_random: [16]u8 = undefined;
-        std.crypto.random.bytes(&server_random);
+        io.random(&server_random);
 
         // KEM shared secret is mixed in during key derivation, not in the auth hash
         const auth_hash = computeAuthHash(shared_key, client_random, &server_random, cluster_id);

@@ -51,13 +51,14 @@ const psk_protocol_salt = "tigertunnel-v1-psk";
 /// Fixed protocol salt for KEM+PSK mode.
 const kem_protocol_salt = "tigertunnel-v1-kem";
 
-/// Read entire file content into buffer using posix (synchronous, no Io context needed).
-fn readFileAll(fd: std.posix.fd_t, buf: []u8) !usize {
+/// Read entire file content into buffer using the Io API.
+fn readFileAll(file: std.Io.File, io: std.Io, buf: []u8) !usize {
+    var read_buf: [4096]u8 = undefined;
+    var reader = file.reader(io, &read_buf);
     var total: usize = 0;
     while (total < buf.len) {
-        const n = std.posix.read(fd, buf[total..]) catch |err| switch (err) {
-            error.WouldBlock => continue,
-            else => return err,
+        const n = reader.interface.readSliceShort(buf[total..]) catch {
+            break;
         };
         if (n == 0) break;
         total += n;
@@ -296,10 +297,13 @@ pub const KeyStore = struct {
 /// Load multiple keys from a file into a KeyStore.
 /// Each line should be in the format "<key_id>:<hex_key>".
 /// Empty lines and lines starting with # are ignored.
-pub fn loadKeyStoreFromFile(path: []const u8, buf: *[key_file_buffer_size]u8) !KeyStore {
-    const fd = try std.posix.open(path, .{}, 0);
-    defer std.posix.close(fd);
-    return parseKeyStore(buf[0..try readFileAll(fd, buf)]);
+pub fn loadKeyStoreFromFile(io: std.Io, path: []const u8, buf: *[key_file_buffer_size]u8) !KeyStore {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.FileNotFound,
+        else => return error.OpenFailed,
+    };
+    defer file.close(io);
+    return parseKeyStore(buf[0..try readFileAll(file, io, buf)]);
 }
 
 /// Parse multiple keys from content. Each line is a key in "<key_id>:<hex_key>" format.
@@ -331,9 +335,9 @@ pub fn parseKeyFile(content: []const u8) !KeyFile {
 }
 
 /// Generate a new random 32-byte key.
-pub fn generateKey() [32]u8 {
+pub fn generateKey(io: std.Io) [32]u8 {
     var key: [32]u8 = undefined;
-    std.crypto.random.bytes(&key);
+    io.random(&key);
     return key;
 }
 
@@ -381,8 +385,8 @@ pub const KemSecretKeyStore = struct {
 };
 
 /// Generate a new KEM keypair.
-pub fn generateKemKeyPair() HybridKem.KeyPair {
-    return HybridKem.KeyPair.generate() catch unreachable;
+pub fn generateKemKeyPair(io: std.Io) HybridKem.KeyPair {
+    return HybridKem.KeyPair.generate(io) catch unreachable;
 }
 
 /// Format a KEM public key file line: "<key_id>:<hex_key>\n"
@@ -413,26 +417,35 @@ pub fn parseKemSecretKeyFile(content: []const u8) !KemSecretKeyFile {
 }
 
 /// Load a KEM public key from file
-pub fn loadKemPublicKeyFromFile(path: []const u8, buf: *[kem_public_key_file_buffer_size]u8) !KemPublicKeyFile {
-    const fd = try std.posix.open(path, .{}, 0);
-    defer std.posix.close(fd);
-    return parseKemPublicKeyFile(buf[0..try readFileAll(fd, buf)]);
+pub fn loadKemPublicKeyFromFile(io: std.Io, path: []const u8, buf: *[kem_public_key_file_buffer_size]u8) !KemPublicKeyFile {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.FileNotFound,
+        else => return error.OpenFailed,
+    };
+    defer file.close(io);
+    return parseKemPublicKeyFile(buf[0..try readFileAll(file, io, buf)]);
 }
 
 /// Load a KEM secret key from file
-pub fn loadKemSecretKeyFromFile(path: []const u8, buf: *[kem_secret_key_file_buffer_size]u8) !KemSecretKeyFile {
-    const fd = try std.posix.open(path, .{}, 0);
-    defer std.posix.close(fd);
-    return parseKemSecretKeyFile(buf[0..try readFileAll(fd, buf)]);
+pub fn loadKemSecretKeyFromFile(io: std.Io, path: []const u8, buf: *[kem_secret_key_file_buffer_size]u8) !KemSecretKeyFile {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.FileNotFound,
+        else => return error.OpenFailed,
+    };
+    defer file.close(io);
+    return parseKemSecretKeyFile(buf[0..try readFileAll(file, io, buf)]);
 }
 
 /// Load multiple KEM secret keys from a file into a KemSecretKeyStore.
 /// Each line should be in the format "<key_id>:<hex_key>".
 /// Empty lines and lines starting with # are ignored.
-pub fn loadKemSecretKeyStoreFromFile(path: []const u8, buf: *[kem_secret_key_store_buffer_size]u8) !KemSecretKeyStore {
-    const fd = try std.posix.open(path, .{}, 0);
-    defer std.posix.close(fd);
-    return parseKemSecretKeyStore(buf[0..try readFileAll(fd, buf)]);
+pub fn loadKemSecretKeyStoreFromFile(io: std.Io, path: []const u8, buf: *[kem_secret_key_store_buffer_size]u8) !KemSecretKeyStore {
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.FileNotFound,
+        else => return error.OpenFailed,
+    };
+    defer file.close(io);
+    return parseKemSecretKeyStore(buf[0..try readFileAll(file, io, buf)]);
 }
 
 /// Parse multiple KEM secret keys from content. Each line is a key in "<key_id>:<hex_key>" format.

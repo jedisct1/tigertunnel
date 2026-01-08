@@ -667,10 +667,9 @@ fn handleMockClient(_: mem.Allocator, stream: net.Stream, io: Io) void {
 // Main
 // ============================================================================
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     std.debug.print("========================================\n", .{});
     std.debug.print("   tigertunnel Stress Test Suite\n", .{});
@@ -683,9 +682,9 @@ pub fn main() !void {
 
         // Wait for server to start
         while (!mock_server_running.load(.acquire)) {
-            std.posix.nanosleep(0, 10 * std.time.ns_per_ms);
+            io.sleep(Io.Duration.fromMilliseconds(10), .boot) catch {};
         }
-        std.posix.nanosleep(0, 50 * std.time.ns_per_ms); // Extra time for listener
+        io.sleep(Io.Duration.fromMilliseconds(50), .boot) catch {}; // Extra time for listener
     }
 
     defer {

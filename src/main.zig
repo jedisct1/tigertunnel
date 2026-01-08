@@ -210,7 +210,7 @@ fn printUsage(prog_name: []const u8) noreturn {
 /// Static buffer for proxy pairs (avoids allocator in arg parsing)
 var proxy_pairs_buf: [max_proxy_pairs]ProxyPair = undefined;
 
-fn parseArgs(init_args: std.process.Args) Config {
+fn parseArgs(init_args: std.process.Args, io: Io) Config {
     var proxy_pair_count: usize = 0;
     var key_file: ?[]const u8 = null;
     var kem_public_file: ?[]const u8 = null;
@@ -298,7 +298,7 @@ fn parseArgs(init_args: std.process.Args) Config {
     if (mode != .keygen and mode != .kemgen) {
         if (key_file) |path| {
             var key_buf: [crypto.key_file_buffer_size]u8 = undefined;
-            const store = crypto.loadKeyStoreFromFile(path, &key_buf) catch |err| {
+            const store = crypto.loadKeyStoreFromFile(io, path, &key_buf) catch |err| {
                 fatal("Failed to load keys from '{s}': {}", .{ path, err });
             };
 
@@ -322,7 +322,7 @@ fn parseArgs(init_args: std.process.Args) Config {
                 fatal("--kempublic is only valid in client mode", .{});
             }
             var buf: [crypto.kem_public_key_file_buffer_size]u8 = undefined;
-            kem_public_key = crypto.loadKemPublicKeyFromFile(path, &buf) catch |err| {
+            kem_public_key = crypto.loadKemPublicKeyFromFile(io, path, &buf) catch |err| {
                 fatal("Failed to load KEM public key from '{s}': {}", .{ path, err });
             };
             log.info("Loaded KEM public key {} from '{s}'", .{ kem_public_key.?.key_id, path });
@@ -334,7 +334,7 @@ fn parseArgs(init_args: std.process.Args) Config {
                 fatal("--kemsecret is only valid in server mode", .{});
             }
             var buf: [crypto.kem_secret_key_store_buffer_size]u8 = undefined;
-            kem_secret_key_store = crypto.loadKemSecretKeyStoreFromFile(path, &buf) catch |err| {
+            kem_secret_key_store = crypto.loadKemSecretKeyStoreFromFile(io, path, &buf) catch |err| {
                 fatal("Failed to load KEM secret key(s) from '{s}': {}", .{ path, err });
             };
             log.info("Loaded {} KEM secret key(s) from '{s}'", .{ kem_secret_key_store.?.count(), path });
@@ -364,7 +364,7 @@ fn parseArgs(init_args: std.process.Args) Config {
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
 
-    const config = parseArgs(init.minimal.args);
+    const config = parseArgs(init.minimal.args, init.io);
 
     if (config.mode == .keygen) {
         runKeygen(init.io, config);
@@ -406,8 +406,10 @@ fn runKeygen(io: Io, config: Config) void {
         fatal("Output path (-o) is required for keygen mode", .{});
     };
 
-    const key_id = std.crypto.random.int(u64);
-    const key = crypto.generateKey();
+    var key_id_bytes: [8]u8 = undefined;
+    io.random(&key_id_bytes);
+    const key_id = mem.readInt(u64, &key_id_bytes, .little);
+    const key = crypto.generateKey(io);
 
     var buf: [256]u8 = undefined;
     const content = crypto.formatKeyFile(&buf, key_id, &key);
@@ -429,8 +431,10 @@ fn runKemgen(io: Io, config: Config) void {
         fatal("Output path (-o) is required for kemgen mode", .{});
     };
 
-    const key_id = std.crypto.random.int(u64);
-    const keypair = crypto.generateKemKeyPair();
+    var key_id_bytes: [8]u8 = undefined;
+    io.random(&key_id_bytes);
+    const key_id = mem.readInt(u64, &key_id_bytes, .little);
+    const keypair = crypto.generateKemKeyPair(io);
     const public_key = keypair.public_key.toBytes();
     const secret_key = keypair.secret_key.toBytes();
 
