@@ -14,7 +14,10 @@ const Io = std.Io;
 const net = Io.net;
 const mem = std.mem;
 const Thread = std.Thread;
-const Instant = std.time.Instant;
+
+fn nanoTimestamp(io: Io) u64 {
+    return @intCast(Io.Timestamp.now(io, .awake).nanoseconds);
+}
 
 const header_size: u32 = 256;
 const max_frame_size: u32 = 1024 * 1024;
@@ -123,11 +126,7 @@ fn runClient(
         const sequence = client_id * 1000000 + i;
 
         const frame_size = createFrame(&buffer, payload_size, sequence);
-        const start_time = Instant.now() catch {
-            result.error_message = "timer unavailable";
-            result.errors += 1;
-            return;
-        };
+        const start_time = nanoTimestamp(io);
 
         // Send frame
         writer.interface.writeAll(buffer[0..frame_size]) catch |err| {
@@ -167,12 +166,8 @@ fn runClient(
             };
         }
 
-        const end_time = Instant.now() catch {
-            result.error_message = "timer unavailable";
-            result.errors += 1;
-            return;
-        };
-        result.latency_sum_ns += end_time.since(start_time);
+        const end_time = nanoTimestamp(io);
+        result.latency_sum_ns += end_time - start_time;
         result.frames_received += 1;
         result.bytes_received += resp_size;
 
@@ -191,7 +186,7 @@ fn runClient(
 // Stress Test: Concurrent Connections
 // ============================================================================
 
-fn stressConcurrentConnections(allocator: mem.Allocator) !void {
+fn stressConcurrentConnections(allocator: mem.Allocator, io: Io) !void {
     std.debug.print("\n=== Stress Test: Concurrent Connections ===\n", .{});
     std.debug.print("Connections: {}, Messages/conn: {}\n", .{ config.concurrent_connections, config.messages_per_connection });
 
@@ -208,7 +203,7 @@ fn stressConcurrentConnections(allocator: mem.Allocator) !void {
         r.* = TestResult{};
     }
 
-    const start_time = try Instant.now();
+    const start_time = nanoTimestamp(io);
 
     // Start all client threads
     for (0..config.concurrent_connections) |i| {
@@ -226,8 +221,8 @@ fn stressConcurrentConnections(allocator: mem.Allocator) !void {
         t.join();
     }
 
-    const end_time = try Instant.now();
-    const elapsed_ns = end_time.since(start_time);
+    const end_time = nanoTimestamp(io);
+    const elapsed_ns = end_time - start_time;
     const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
 
     // Aggregate results
@@ -290,7 +285,7 @@ fn stressConcurrentConnections(allocator: mem.Allocator) !void {
 // Stress Test: High Throughput (Single Connection)
 // ============================================================================
 
-fn stressHighThroughput(allocator: mem.Allocator) !void {
+fn stressHighThroughput(allocator: mem.Allocator, _: Io) !void {
     std.debug.print("\n=== Stress Test: High Throughput ===\n", .{});
 
     const num_messages: u32 = 1000;
@@ -318,7 +313,7 @@ fn stressHighThroughput(allocator: mem.Allocator) !void {
     var writer = stream.writer(io, &write_buf);
 
     var total_bytes: u64 = 0;
-    const start_time = try Instant.now();
+    const start_time = nanoTimestamp(io);
 
     var i: u32 = 0;
     while (i < num_messages) : (i += 1) {
@@ -348,8 +343,8 @@ fn stressHighThroughput(allocator: mem.Allocator) !void {
         total_bytes += frame_size + resp_size;
     }
 
-    const end_time = try Instant.now();
-    const elapsed_ns = end_time.since(start_time);
+    const end_time = nanoTimestamp(io);
+    const elapsed_ns = end_time - start_time;
     const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
 
     const throughput_msg_per_sec = if (elapsed_ms > 0)
@@ -373,7 +368,7 @@ fn stressHighThroughput(allocator: mem.Allocator) !void {
 // Stress Test: Rapid Connect/Disconnect
 // ============================================================================
 
-fn stressRapidConnectDisconnect(allocator: mem.Allocator) !void {
+fn stressRapidConnectDisconnect(allocator: mem.Allocator, _: Io) !void {
     std.debug.print("\n=== Stress Test: Rapid Connect/Disconnect ===\n", .{});
 
     const num_cycles: u32 = 100;
@@ -387,7 +382,7 @@ fn stressRapidConnectDisconnect(allocator: mem.Allocator) !void {
     var buffer: [header_size]u8 = undefined;
 
     var successful_cycles: u32 = 0;
-    const start_time = try Instant.now();
+    const start_time = nanoTimestamp(io);
 
     var i: u32 = 0;
     while (i < num_cycles) : (i += 1) {
@@ -429,8 +424,8 @@ fn stressRapidConnectDisconnect(allocator: mem.Allocator) !void {
         stream.close(io);
     }
 
-    const end_time = try Instant.now();
-    const elapsed_ns = end_time.since(start_time);
+    const end_time = nanoTimestamp(io);
+    const elapsed_ns = end_time - start_time;
     const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
 
     const cycles_per_sec = if (elapsed_ms > 0)
@@ -452,7 +447,7 @@ fn stressRapidConnectDisconnect(allocator: mem.Allocator) !void {
 // Stress Test: Large Payloads
 // ============================================================================
 
-fn stressLargePayloads(allocator: mem.Allocator) !void {
+fn stressLargePayloads(allocator: mem.Allocator, _: Io) !void {
     std.debug.print("\n=== Stress Test: Large Payloads ===\n", .{});
 
     const payload_sizes = [_]u32{ 64 * 1024, 128 * 1024, 256 * 1024, 512 * 1024, 768 * 1024 };
@@ -481,10 +476,7 @@ fn stressLargePayloads(allocator: mem.Allocator) !void {
 
         std.debug.print("  Testing payload size: {} bytes... ", .{payload_size});
 
-        const start_time = Instant.now() catch {
-            std.debug.print("FAILED (timer unavailable)\n", .{});
-            return error.TimerUnavailable;
-        };
+        const start_time = nanoTimestamp(io);
 
         // Send
         writer.interface.writeAll(buffer[0..frame_size]) catch |err| {
@@ -507,11 +499,8 @@ fn stressLargePayloads(allocator: mem.Allocator) !void {
             };
         }
 
-        const end_time = Instant.now() catch {
-            std.debug.print("FAILED (timer unavailable)\n", .{});
-            return error.TimerUnavailable;
-        };
-        const latency_us = end_time.since(start_time) / 1000;
+        const end_time = nanoTimestamp(io);
+        const latency_us = (end_time - start_time) / 1000;
 
         if (resp_size != frame_size) {
             std.debug.print("FAILED (size mismatch: {} vs {})\n", .{ resp_size, frame_size });
@@ -528,7 +517,7 @@ fn stressLargePayloads(allocator: mem.Allocator) !void {
 // Stress Test: Burst Traffic
 // ============================================================================
 
-fn stressBurstTraffic(allocator: mem.Allocator) !void {
+fn stressBurstTraffic(allocator: mem.Allocator, _: Io) !void {
     std.debug.print("\n=== Stress Test: Burst Traffic ===\n", .{});
 
     const burst_size: u32 = 50;
@@ -556,7 +545,7 @@ fn stressBurstTraffic(allocator: mem.Allocator) !void {
 
     var total_sent: u32 = 0;
     var total_received: u32 = 0;
-    const start_time = try Instant.now();
+    const start_time = nanoTimestamp(io);
 
     var burst: u32 = 0;
     while (burst < num_bursts) : (burst += 1) {
@@ -588,8 +577,8 @@ fn stressBurstTraffic(allocator: mem.Allocator) !void {
         }
     }
 
-    const end_time = try Instant.now();
-    const elapsed_ns = end_time.since(start_time);
+    const end_time = nanoTimestamp(io);
+    const elapsed_ns = end_time - start_time;
     const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
 
     std.debug.print("\nResults:\n", .{});
@@ -697,7 +686,7 @@ pub fn main(init: std.process.Init) !void {
     var failed: u32 = 0;
 
     // Run tests
-    const TestFn = *const fn (mem.Allocator) anyerror!void;
+    const TestFn = *const fn (mem.Allocator, Io) anyerror!void;
     const tests = [_]struct { name: []const u8, func: TestFn }{
         .{ .name = "Concurrent Connections", .func = stressConcurrentConnections },
         .{ .name = "High Throughput", .func = stressHighThroughput },
@@ -707,7 +696,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     for (tests) |t| {
-        t.func(allocator) catch |err| {
+        t.func(allocator, io) catch |err| {
             std.debug.print("\n[FAILED] {s}: {}\n", .{ t.name, err });
             failed += 1;
             continue;

@@ -274,8 +274,7 @@ pub fn sendClientHello(stream: net.Stream, io: Io, key_id: u64, shared_key: *con
     io.random(&client_random);
     @memcpy(buf[10..26], &client_random);
 
-    const ts = std.posix.clock_gettime(.REALTIME) catch @panic("clock_gettime failed");
-    const timestamp: u64 = @intCast(ts.sec);
+    const timestamp: u64 = @intCast(Io.Timestamp.now(io, .real).toSeconds());
     mem.writeInt(u64, buf[26..34], timestamp, .little);
 
     const hash = computeClientHelloHash(
@@ -341,8 +340,7 @@ pub fn sendKemClientHello(
     io.random(&client_random);
     @memcpy(buf[18..34], &client_random);
 
-    const ts = std.posix.clock_gettime(.REALTIME) catch @panic("clock_gettime failed");
-    const timestamp: u64 = @intCast(ts.sec);
+    const timestamp: u64 = @intCast(Io.Timestamp.now(io, .real).toSeconds());
     mem.writeInt(u64, buf[34..42], timestamp, .little);
 
     const hash = computeKemClientHelloHash(
@@ -448,9 +446,8 @@ pub const max_timestamp_drift: u64 = 3600;
 
 /// Validate that a timestamp is within acceptable bounds (±1 hour from current time).
 /// Returns true if timestamp is valid, false otherwise.
-pub fn validateTimestamp(client_timestamp: u64) bool {
-    const ts = std.posix.clock_gettime(.REALTIME) catch return false;
-    const server_time: u64 = @intCast(ts.sec);
+pub fn validateTimestamp(client_timestamp: u64, io: Io) bool {
+    const server_time: u64 = @intCast(Io.Timestamp.now(io, .real).toSeconds());
 
     // Check if timestamp is too old (more than 1 hour in the past)
     if (client_timestamp < server_time and server_time - client_timestamp > max_timestamp_drift) {
@@ -736,12 +733,14 @@ pub const StreamRegistry = struct {
     streams: std.AutoHashMap(u32, *Stream),
     allocator: Allocator,
     next_stream_id: u32 = 1,
-    mutex: std.Thread.Mutex = .{},
+    mutex: Io.Mutex = Io.Mutex.init,
+    io: Io = undefined,
 
-    pub fn init(allocator: Allocator) StreamRegistry {
+    pub fn init(allocator: Allocator, io: Io) StreamRegistry {
         return .{
             .streams = std.AutoHashMap(u32, *Stream).init(allocator),
             .allocator = allocator,
+            .io = io,
         };
     }
 
@@ -756,8 +755,8 @@ pub const StreamRegistry = struct {
     /// Create a new stream with an auto-assigned ID.
     /// Uses linear probing to avoid collisions when the counter wraps.
     pub fn createStream(self: *StreamRegistry) !*Stream {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         var id = self.next_stream_id;
         while (self.streams.contains(id)) {
@@ -777,8 +776,8 @@ pub const StreamRegistry = struct {
 
     /// Register a stream with a specific ID (server-side, from client).
     pub fn registerStream(self: *StreamRegistry, id: u32) !*Stream {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.streams.contains(id)) {
             return error.StreamAlreadyExists;
@@ -793,8 +792,8 @@ pub const StreamRegistry = struct {
 
     /// Get a stream by ID.
     pub fn getStream(self: *StreamRegistry, id: u32) ?*Stream {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         if (self.streams.get(id)) |stream| {
             stream.retain();
             return stream;
@@ -804,8 +803,8 @@ pub const StreamRegistry = struct {
 
     /// Remove and cleanup a stream.
     pub fn removeStream(self: *StreamRegistry, id: u32, io: Io) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         if (self.streams.fetchRemove(id)) |kv| {
             kv.value.release(io);
@@ -813,8 +812,8 @@ pub const StreamRegistry = struct {
     }
 
     pub fn count(self: *StreamRegistry) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
         return self.streams.count();
     }
 };
@@ -853,7 +852,7 @@ pub const ConnectionPool = struct {
     pub const PooledConnection = struct {
         stream: ?net.Stream,
         registry: StreamRegistry,
-        write_mutex: std.Thread.Mutex = .{},
+        write_mutex: Io.Mutex = Io.Mutex.init,
         running: std.atomic.Value(bool),
         /// Indicates if the connection is healthy
         healthy: std.atomic.Value(bool),
@@ -885,8 +884,8 @@ pub const ConnectionPool = struct {
 
         for (connections, 0..) |*conn, idx| {
             conn.stream = null;
-            conn.registry = StreamRegistry.init(allocator);
-            conn.write_mutex = .{};
+            conn.registry = StreamRegistry.init(allocator, io);
+            conn.write_mutex = Io.Mutex.init;
             conn.running = std.atomic.Value(bool).init(true);
             conn.healthy = std.atomic.Value(bool).init(false);
             conn.index = idx;

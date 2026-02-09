@@ -138,8 +138,8 @@ pub const ClientMuxSession = struct {
     }
 
     fn sendMuxFrame(self: *ClientMuxSession, frame_type: multiplex.FrameType, data: ?[]u8, frame_size: u32) !void {
-        self.pool_conn.write_mutex.lock();
-        defer self.pool_conn.write_mutex.unlock();
+        self.pool_conn.write_mutex.lockUncancelable(self.io);
+        defer self.pool_conn.write_mutex.unlock(self.io);
 
         const stream = self.pool_conn.stream orelse {
             self.pool.markUnhealthy(self.pool_conn, self.io);
@@ -217,7 +217,7 @@ pub const ServerMuxHandler = struct {
     kem_secret_key_store: ?*const crypto.KemSecretKeyStore,
     cluster_id: ?u128,
     running: std.atomic.Value(bool),
-    write_mutex: std.Thread.Mutex,
+    write_mutex: Io.Mutex,
     max_sessions: u32,
     /// Nonce counter for server-to-client encryption (atomic for thread safety)
     s2c_counter: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
@@ -238,7 +238,7 @@ pub const ServerMuxHandler = struct {
         return .{
             .mux_stream = mux_stream,
             .backend_address = backend_address,
-            .registry = multiplex.StreamRegistry.init(allocator),
+            .registry = multiplex.StreamRegistry.init(allocator, io),
             .allocator = allocator,
             .io = io,
             .conn_id = conn_id,
@@ -247,7 +247,7 @@ pub const ServerMuxHandler = struct {
             .kem_secret_key_store = kem_secret_key_store,
             .cluster_id = cluster_id,
             .running = std.atomic.Value(bool).init(true),
-            .write_mutex = .{},
+            .write_mutex = Io.Mutex.init,
             .max_sessions = max_sessions,
         };
     }
@@ -284,7 +284,7 @@ pub const ServerMuxHandler = struct {
                     }
 
                     // Validate timestamp (must be within ±1 hour)
-                    if (!multiplex.validateTimestamp(client_hello.timestamp)) {
+                    if (!multiplex.validateTimestamp(client_hello.timestamp, self.io)) {
                         log.err("[conn {}] Client authentication failed: timestamp out of range ({})", .{ self.conn_id, client_hello.timestamp });
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .timestamp_invalid, shared_key.?, &client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
@@ -329,7 +329,7 @@ pub const ServerMuxHandler = struct {
                     }
 
                     // Validate timestamp (must be within ±1 hour)
-                    if (!multiplex.validateTimestamp(kem_client_hello.timestamp)) {
+                    if (!multiplex.validateTimestamp(kem_client_hello.timestamp, self.io)) {
                         log.err("[conn {}] Client authentication failed: timestamp out of range ({})", .{ self.conn_id, kem_client_hello.timestamp });
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .timestamp_invalid, shared_key.?, &kem_client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
@@ -522,8 +522,8 @@ pub const ServerMuxHandler = struct {
     }
 
     fn sendResponse(self: *ServerMuxHandler, stream_id: u32, data: []const u8) !void {
-        self.write_mutex.lock();
-        defer self.write_mutex.unlock();
+        self.write_mutex.lockUncancelable(self.io);
+        defer self.write_mutex.unlock(self.io);
 
         var write_buf: [io_buffer_size]u8 = undefined;
         var writer = self.mux_stream.writer(self.io, &write_buf);
