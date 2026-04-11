@@ -446,7 +446,7 @@ pub const ServerMuxHandler = struct {
         const stream = try self.registry.registerStream(stream_id);
 
         // Connect to backend for this stream
-        stream.backend_stream = net.IpAddress.connect(self.backend_address, self.io, .{ .mode = .stream }) catch |err| {
+        stream.backend_stream = net.IpAddress.connect(&self.backend_address, self.io, .{ .mode = .stream }) catch |err| {
             log.err("[conn {}] Failed to connect to backend for stream {}: {}", .{ self.conn_id, stream_id, err });
             self.registry.removeStream(stream_id, self.io);
             return err;

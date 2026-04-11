@@ -915,7 +915,7 @@ pub const ConnectionPool = struct {
                     log.info("Connection {} attempt {}{s}", .{ conn.index, attempt + 1, kem_suffix });
                 }
 
-                const stream = net.IpAddress.connect(backend_address, io, .{ .mode = .stream }) catch |err| {
+                const stream = net.IpAddress.connect(&backend_address, io, .{ .mode = .stream }) catch |err| {
                     log.warn("Connection {} failed to connect: {}", .{ conn.index, err });
                     all_connected = false;
                     continue;
@@ -1110,7 +1110,7 @@ pub const ConnectionPool = struct {
                 log.info("Connection {} reconnect attempt {}", .{ conn.index, attempt + 1 });
             }
 
-            const stream = net.IpAddress.connect(self.backend_address, io, .{ .mode = .stream }) catch |err| {
+            const stream = net.IpAddress.connect(&self.backend_address, io, .{ .mode = .stream }) catch |err| {
                 log.warn("Connection {} reconnect failed: {}", .{ conn.index, err });
                 Io.sleep(io, Io.Duration.fromMilliseconds(delay_ms), .awake) catch {};
                 delay_ms = config.nextDelay(delay_ms);

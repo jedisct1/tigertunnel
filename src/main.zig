@@ -521,7 +521,7 @@ fn runClientProxyPair(ctx: *ClientProxyContext) void {
     // Start listener BEFORE reader threads to avoid race condition on bind failure.
     // If we spawn threads first and bind fails, the defer cleanup closes sockets
     // while threads are blocked on read, causing BADF panic.
-    var server = net.IpAddress.listen(ctx.listen_address, io, .{
+    var server = net.IpAddress.listen(&ctx.listen_address, io, .{
         .reuse_address = true,
     }) catch |err| {
         log.err("Pair {}: Failed to bind: {}", .{ pair_index, err });
@@ -669,7 +669,7 @@ fn runServerProxyPair(ctx: *ServerProxyContext) void {
     const io = ctx.io;
     const pair_index = ctx.pair_index;
 
-    var server = net.IpAddress.listen(ctx.listen_address, io, .{
+    var server = net.IpAddress.listen(&ctx.listen_address, io, .{
         .reuse_address = true,
     }) catch |err| {
         log.err("Pair {}: Failed to bind: {}", .{ pair_index, err });

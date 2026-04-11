@@ -105,7 +105,7 @@ fn runClient(
     defer io_backend.deinit();
     const io = io_backend.io();
 
-    const stream = net.IpAddress.connect(addr, io, .{ .mode = .stream }) catch |err| {
+    const stream = net.IpAddress.connect(&addr, io, .{ .mode = .stream }) catch |err| {
         result.error_message = @errorName(err);
         result.errors += 1;
         return;
@@ -298,7 +298,7 @@ fn stressHighThroughput(allocator: mem.Allocator, _: Io) !void {
     const io = io_backend.io();
 
     const addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(config.target_port) };
-    const stream = net.IpAddress.connect(addr, io, .{ .mode = .stream }) catch |err| {
+    const stream = net.IpAddress.connect(&addr, io, .{ .mode = .stream }) catch |err| {
         std.debug.print("Failed to connect: {}\n", .{err});
         return error.ConnectionFailed;
     };
@@ -387,7 +387,7 @@ fn stressRapidConnectDisconnect(allocator: mem.Allocator, _: Io) !void {
     var i: u32 = 0;
     while (i < num_cycles) : (i += 1) {
         // Connect
-        const stream = net.IpAddress.connect(addr, io, .{ .mode = .stream }) catch {
+        const stream = net.IpAddress.connect(&addr, io, .{ .mode = .stream }) catch {
             continue;
         };
 
@@ -457,7 +457,7 @@ fn stressLargePayloads(allocator: mem.Allocator, _: Io) !void {
     const io = io_backend.io();
 
     const addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(config.target_port) };
-    const stream = net.IpAddress.connect(addr, io, .{ .mode = .stream }) catch |err| {
+    const stream = net.IpAddress.connect(&addr, io, .{ .mode = .stream }) catch |err| {
         std.debug.print("Failed to connect: {}\n", .{err});
         return error.ConnectionFailed;
     };
@@ -531,7 +531,7 @@ fn stressBurstTraffic(allocator: mem.Allocator, _: Io) !void {
     const io = io_backend.io();
 
     const addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(config.target_port) };
-    const stream = net.IpAddress.connect(addr, io, .{ .mode = .stream }) catch |err| {
+    const stream = net.IpAddress.connect(&addr, io, .{ .mode = .stream }) catch |err| {
         std.debug.print("Failed to connect: {}\n", .{err});
         return error.ConnectionFailed;
     };
@@ -603,7 +603,7 @@ fn runMockServer(allocator: mem.Allocator) void {
 
     const listen_addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(config.target_port) };
 
-    var server = net.IpAddress.listen(listen_addr, io, .{ .reuse_address = true }) catch |err| {
+    var server = net.IpAddress.listen(&listen_addr, io, .{ .reuse_address = true }) catch |err| {
         std.debug.print("Mock server failed to bind: {}\n", .{err});
         return;
     };

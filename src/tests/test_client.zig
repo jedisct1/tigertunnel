@@ -66,7 +66,7 @@ fn runClient(allocator: std.mem.Allocator, io: Io, iterations: usize) bool {
         return false;
     };
 
-    const stream = net.IpAddress.connect(tunnel_addr, io, .{ .mode = .stream }) catch |err| {
+    const stream = net.IpAddress.connect(&tunnel_addr, io, .{ .mode = .stream }) catch |err| {
         std.debug.print("Connect error: {}\n", .{err});
         return false;
     };
