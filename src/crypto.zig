@@ -625,9 +625,9 @@ pub fn decryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, co
 }
 
 test "deriveKeys produces consistent output" {
-    const master_key = [_]u8{0x42} ** 32;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
     const keys1 = deriveKeys(&master_key, &client_random, &server_random);
     const keys2 = deriveKeys(&master_key, &client_random, &server_random);
 
@@ -640,9 +640,9 @@ test "deriveKeys produces consistent output" {
 }
 
 test "deriveKeys produces different keys for each direction" {
-    const master_key = [_]u8{0x42} ** 32;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
     const keys = deriveKeys(&master_key, &client_random, &server_random);
 
     // Keys for different directions should be different
@@ -653,10 +653,10 @@ test "deriveKeys produces different keys for each direction" {
 }
 
 test "different master keys produce different derived keys" {
-    const master_key1 = [_]u8{0x42} ** 32;
-    const master_key2 = [_]u8{0x43} ** 32;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key1: [32]u8 = @splat(0x42);
+    const master_key2: [32]u8 = @splat(0x43);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
 
     const keys1 = deriveKeys(&master_key1, &client_random, &server_random);
     const keys2 = deriveKeys(&master_key2, &client_random, &server_random);
@@ -665,11 +665,11 @@ test "different master keys produce different derived keys" {
 }
 
 test "different randoms produce different derived keys" {
-    const master_key = [_]u8{0x42} ** 32;
-    const client_random1 = [_]u8{0x11} ** 16;
-    const server_random1 = [_]u8{0x22} ** 16;
-    const client_random2 = [_]u8{0x33} ** 16;
-    const server_random2 = [_]u8{0x44} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const client_random1: [16]u8 = @splat(0x11);
+    const server_random1: [16]u8 = @splat(0x22);
+    const client_random2: [16]u8 = @splat(0x33);
+    const server_random2: [16]u8 = @splat(0x44);
 
     const keys1 = deriveKeys(&master_key, &client_random1, &server_random1);
     const keys2 = deriveKeys(&master_key, &client_random2, &server_random2);
@@ -680,10 +680,10 @@ test "different randoms produce different derived keys" {
 }
 
 test "deriveKeysWithKem produces different keys than deriveKeys" {
-    const master_key = [_]u8{0x42} ** 32;
-    const kem_secret = [_]u8{0x55} ** kem_shared_secret_size;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const kem_secret: [kem_shared_secret_size]u8 = @splat(0x55);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
 
     const keys_psk = deriveKeys(&master_key, &client_random, &server_random);
     const keys_kem = deriveKeysWithKem(&master_key, &kem_secret, &client_random, &server_random);
@@ -694,10 +694,10 @@ test "deriveKeysWithKem produces different keys than deriveKeys" {
 }
 
 test "deriveKeysWithKem produces consistent output" {
-    const master_key = [_]u8{0x42} ** 32;
-    const kem_secret = [_]u8{0x55} ** kem_shared_secret_size;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const kem_secret: [kem_shared_secret_size]u8 = @splat(0x55);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
 
     const keys1 = deriveKeysWithKem(&master_key, &kem_secret, &client_random, &server_random);
     const keys2 = deriveKeysWithKem(&master_key, &kem_secret, &client_random, &server_random);
@@ -709,11 +709,11 @@ test "deriveKeysWithKem produces consistent output" {
 }
 
 test "deriveKeysWithKem different KEM secrets produce different keys" {
-    const master_key = [_]u8{0x42} ** 32;
-    const kem_secret1 = [_]u8{0x55} ** kem_shared_secret_size;
-    const kem_secret2 = [_]u8{0x66} ** kem_shared_secret_size;
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const master_key: [32]u8 = @splat(0x42);
+    const kem_secret1: [kem_shared_secret_size]u8 = @splat(0x55);
+    const kem_secret2: [kem_shared_secret_size]u8 = @splat(0x66);
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
 
     const keys1 = deriveKeysWithKem(&master_key, &kem_secret1, &client_random, &server_random);
     const keys2 = deriveKeysWithKem(&master_key, &kem_secret2, &client_random, &server_random);
@@ -725,8 +725,8 @@ test "deriveKeysWithKem different KEM secrets produce different keys" {
 
 test "encrypt and decrypt frame roundtrip" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -769,7 +769,7 @@ test "encrypt and decrypt frame roundtrip" {
     try testing.expectEqualSlices(u8, original[@offsetOf(Header, "checksum_padding")..][0..16], data[@offsetOf(Header, "checksum_padding")..][0..16]);
     try testing.expectEqualSlices(u8, original[@offsetOf(Header, "checksum_body")..][0..16], data[@offsetOf(Header, "checksum_body")..][0..16]);
     try testing.expectEqualSlices(u8, original[@offsetOf(Header, "checksum_body_padding")..][0..16], data[@offsetOf(Header, "checksum_body_padding")..][0..16]);
-    try testing.expectEqualSlices(u8, &[_]u8{0} ** 16, data[@offsetOf(Header, "nonce_reserved")..][0..16]);
+    try testing.expectEqualSlices(u8, &@as([16]u8, @splat(0)), data[@offsetOf(Header, "nonce_reserved")..][0..16]);
     try testing.expectEqual(cluster_id, mem.readInt(u128, data[@offsetOf(Header, "cluster")..][0..16], .little));
     try testing.expectEqual(frame_size, mem.readInt(u32, data[@offsetOf(Header, "size")..][0..4], .little));
     try testing.expectEqualSlices(u8, original[@offsetOf(Header, "epoch")..frame.header_size], data[@offsetOf(Header, "epoch")..frame.header_size]);
@@ -778,12 +778,12 @@ test "encrypt and decrypt frame roundtrip" {
 
 test "decrypt with wrong key fails" {
     const keys1 = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const keys2 = DirectionalKey{
-        .key = [_]u8{0x43} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x43),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -800,8 +800,8 @@ test "decrypt with wrong key fails" {
 
 test "decrypt with tampered data fails" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -822,8 +822,8 @@ test "decrypt with tampered data fails" {
 
 test "encrypt fails with non-zero checksum_padding" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
 
     var data: [frame.header_size]u8 = undefined;
@@ -840,8 +840,8 @@ test "encrypt fails with non-zero checksum_padding" {
 
 test "encrypt fails with non-zero checksum_body_padding" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
 
     var data: [frame.header_size]u8 = undefined;
@@ -858,8 +858,8 @@ test "encrypt fails with non-zero checksum_body_padding" {
 
 test "decrypt fails with non-zero checksum_padding after decryption" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -886,8 +886,8 @@ test "decrypt fails with non-zero checksum_padding after decryption" {
 
 test "decrypt fails with tampered padding in encrypted data" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -909,8 +909,8 @@ test "decrypt fails with tampered padding in encrypted data" {
 
 test "counter increments for encrypt and decrypt" {
     const keys = DirectionalKey{
-        .key = [_]u8{0x42} ** 16,
-        .base_nonce = [_]u8{0x24} ** 16,
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
     };
     const cluster_id: u128 = 12345;
 
@@ -1023,7 +1023,7 @@ test "KeyStore basic operations" {
     // Add a key
     try store.addKey(.{
         .key_id = 123,
-        .key = [_]u8{0x42} ** 32,
+        .key = @splat(0x42),
     });
 
     try testing.expectEqual(@as(usize, 1), store.count());
@@ -1031,7 +1031,7 @@ test "KeyStore basic operations" {
     // Look up the key
     const key = store.getKey(123);
     try testing.expect(key != null);
-    try testing.expectEqualSlices(u8, &([_]u8{0x42} ** 32), key.?);
+    try testing.expectEqualSlices(u8, &@as([32]u8, @splat(0x42)), key.?);
 
     // Non-existent key
     try testing.expect(store.getKey(999) == null);
@@ -1040,9 +1040,9 @@ test "KeyStore basic operations" {
 test "KeyStore multiple keys" {
     var store = KeyStore{};
 
-    try store.addKey(.{ .key_id = 1, .key = [_]u8{0x11} ** 32 });
-    try store.addKey(.{ .key_id = 2, .key = [_]u8{0x22} ** 32 });
-    try store.addKey(.{ .key_id = 3, .key = [_]u8{0x33} ** 32 });
+    try store.addKey(.{ .key_id = 1, .key = @as([32]u8, @splat(0x11)) });
+    try store.addKey(.{ .key_id = 2, .key = @as([32]u8, @splat(0x22)) });
+    try store.addKey(.{ .key_id = 3, .key = @as([32]u8, @splat(0x33)) });
 
     try testing.expectEqual(@as(usize, 3), store.count());
 
@@ -1063,10 +1063,10 @@ test "KeyStore multiple keys" {
 test "KeyStore rejects duplicate key_id" {
     var store = KeyStore{};
 
-    try store.addKey(.{ .key_id = 42, .key = [_]u8{0x11} ** 32 });
+    try store.addKey(.{ .key_id = 42, .key = @as([32]u8, @splat(0x11)) });
     try testing.expectError(error.DuplicateKeyId, store.addKey(.{
         .key_id = 42,
-        .key = [_]u8{0x22} ** 32,
+        .key = @splat(0x22),
     }));
 }
 
@@ -1077,7 +1077,7 @@ test "KeyStore getFirstKey" {
     try testing.expect(store.getFirstKey() == null);
 
     // Add a key
-    try store.addKey(.{ .key_id = 100, .key = [_]u8{0xAA} ** 32 });
+    try store.addKey(.{ .key_id = 100, .key = @as([32]u8, @splat(0xAA)) });
 
     const first = store.getFirstKey();
     try testing.expect(first != null);
@@ -1086,10 +1086,10 @@ test "KeyStore getFirstKey" {
 
 test "KeyStore getDerivedKeys" {
     var store = KeyStore{};
-    try store.addKey(.{ .key_id = 42, .key = [_]u8{0x42} ** 32 });
+    try store.addKey(.{ .key_id = 42, .key = @as([32]u8, @splat(0x42)) });
 
-    const client_random = [_]u8{0x11} ** 16;
-    const server_random = [_]u8{0x22} ** 16;
+    const client_random: [16]u8 = @splat(0x11);
+    const server_random: [16]u8 = @splat(0x22);
 
     // Get derived keys for existing key
     const dk = store.getDerivedKeys(42, &client_random, &server_random);

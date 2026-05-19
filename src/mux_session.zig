@@ -271,7 +271,7 @@ pub const ServerMuxHandler = struct {
                     const shared_key = store.getKey(client_hello.key_id);
                     if (shared_key == null) {
                         log.err("[conn {}] Unknown key ID: {}", .{ self.conn_id, client_hello.key_id });
-                        const dummy_key: [32]u8 = .{0} ** 32;
+                        const dummy_key: [32]u8 = @splat(0);
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .unknown_key, &dummy_key, &client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
                     }
@@ -316,7 +316,7 @@ pub const ServerMuxHandler = struct {
                     const shared_key = store.getKey(kem_client_hello.key_id);
                     if (shared_key == null) {
                         log.err("[conn {}] Unknown key ID: {}", .{ self.conn_id, kem_client_hello.key_id });
-                        const dummy_key: [32]u8 = .{0} ** 32;
+                        const dummy_key: [32]u8 = @splat(0);
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .unknown_key, &dummy_key, &kem_client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
                     }
@@ -340,7 +340,7 @@ pub const ServerMuxHandler = struct {
                     // Look up KEM secret key
                     const kem_store = self.kem_secret_key_store orelse {
                         log.err("[conn {}] Client requested KEM but server has no KEM keys configured", .{self.conn_id});
-                        const dummy_key: [32]u8 = .{0} ** 32;
+                        const dummy_key: [32]u8 = @splat(0);
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .unknown_kem_key, &dummy_key, &kem_client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
                     };
@@ -348,7 +348,7 @@ pub const ServerMuxHandler = struct {
                     const kem_secret_key = kem_store.getKey(kem_client_hello.kem_key_id);
                     if (kem_secret_key == null) {
                         log.err("[conn {}] Unknown KEM key ID: {}", .{ self.conn_id, kem_client_hello.kem_key_id });
-                        const dummy_key: [32]u8 = .{0} ** 32;
+                        const dummy_key: [32]u8 = @splat(0);
                         _ = multiplex.sendServerHello(self.mux_stream, self.io, .unknown_kem_key, &dummy_key, &kem_client_hello.client_random, self.cluster_id orelse 0) catch {};
                         return;
                     }
