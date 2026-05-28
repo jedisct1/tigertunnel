@@ -495,6 +495,12 @@ fn computeNonce(base_nonce: *const [16]u8, counter: u64) [16]u8 {
 ///
 /// Returns error.InvalidPadding if checksum_padding or checksum_body_padding are non-zero.
 pub fn encryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, counter: *std.atomic.Value(u64)) error{InvalidPadding}!void {
+    return encryptFrameWithAssociatedData(data, frame_size, keys, counter, "");
+}
+
+/// Like encryptFrame, but binds the encrypted payload to caller-supplied associated data
+/// via the AEAD authentication tag.
+pub fn encryptFrameWithAssociatedData(data: []u8, frame_size: u32, keys: *const DirectionalKey, counter: *std.atomic.Value(u64), associated_data: []const u8) error{InvalidPadding}!void {
     assert(frame_size >= frame.header_size);
     assert(data.len >= frame_size);
 
@@ -543,10 +549,10 @@ pub fn encryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, co
 
     var tag: [16]u8 = undefined;
     Aegis128X2.encrypt(
-        plaintext, // output ciphertext (in-place)
+        plaintext,
         &tag,
-        plaintext, // input plaintext
-        "", // no associated data
+        plaintext,
+        associated_data,
         nonce,
         keys.key,
     );
@@ -571,6 +577,11 @@ pub fn encryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, co
 /// Returns error.AuthenticationFailed if the AEAD tag doesn't verify.
 /// Returns error.InvalidPadding if checksum_padding or checksum_body_padding are non-zero.
 pub fn decryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, counter: *std.atomic.Value(u64), cluster_id: u128) !void {
+    return decryptFrameWithAssociatedData(data, frame_size, keys, counter, cluster_id, "");
+}
+
+/// Like decryptFrame, but verifies the AEAD tag against caller-supplied associated data.
+pub fn decryptFrameWithAssociatedData(data: []u8, frame_size: u32, keys: *const DirectionalKey, counter: *std.atomic.Value(u64), cluster_id: u128, associated_data: []const u8) !void {
     assert(frame_size >= frame.header_size);
     assert(data.len >= frame_size);
 
@@ -587,10 +598,10 @@ pub fn decryptFrame(data: []u8, frame_size: u32, keys: *const DirectionalKey, co
     const ciphertext = data[encrypted_start..frame_size];
 
     try Aegis128X2.decrypt(
-        ciphertext, // output plaintext (in-place)
-        ciphertext, // input ciphertext
+        ciphertext,
+        ciphertext,
         tag,
-        "", // no associated data
+        associated_data,
         nonce,
         keys.key,
     );
@@ -938,6 +949,73 @@ test "counter increments for encrypt and decrypt" {
 
     try decryptFrame(&data2, frame_size, &keys, &decrypt_counter, cluster_id);
     try testing.expectEqual(@as(u64, 2), decrypt_counter.load(.monotonic));
+}
+
+test "encrypt/decrypt with matching associated data succeeds" {
+    const keys = DirectionalKey{
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
+    };
+    const cluster_id: u128 = 12345;
+    const ad = "stream-id=42|frame_type=data";
+
+    var data: [frame.header_size]u8 = undefined;
+    @memset(&data, 0);
+    const frame_size: u32 = frame.header_size;
+    mem.writeInt(u32, data[@offsetOf(Header, "size")..][0..4], frame_size, .little);
+
+    var counter = std.atomic.Value(u64).init(0);
+    try encryptFrameWithAssociatedData(&data, frame_size, &keys, &counter, ad);
+
+    var dctr = std.atomic.Value(u64).init(0);
+    try decryptFrameWithAssociatedData(&data, frame_size, &keys, &dctr, cluster_id, ad);
+}
+
+test "decrypt fails when associated data is altered" {
+    const keys = DirectionalKey{
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
+    };
+    const cluster_id: u128 = 12345;
+    const ad_send = "stream-id=42";
+    const ad_recv = "stream-id=99";
+
+    var data: [frame.header_size]u8 = undefined;
+    @memset(&data, 0);
+    const frame_size: u32 = frame.header_size;
+    mem.writeInt(u32, data[@offsetOf(Header, "size")..][0..4], frame_size, .little);
+
+    var counter = std.atomic.Value(u64).init(0);
+    try encryptFrameWithAssociatedData(&data, frame_size, &keys, &counter, ad_send);
+
+    var dctr = std.atomic.Value(u64).init(0);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        decryptFrameWithAssociatedData(&data, frame_size, &keys, &dctr, cluster_id, ad_recv),
+    );
+}
+
+test "decrypt fails when sender used AD but receiver omits it" {
+    const keys = DirectionalKey{
+        .key = @splat(0x42),
+        .base_nonce = @splat(0x24),
+    };
+    const cluster_id: u128 = 12345;
+    const ad = "mux-header-bytes";
+
+    var data: [frame.header_size]u8 = undefined;
+    @memset(&data, 0);
+    const frame_size: u32 = frame.header_size;
+    mem.writeInt(u32, data[@offsetOf(Header, "size")..][0..4], frame_size, .little);
+
+    var counter = std.atomic.Value(u64).init(0);
+    try encryptFrameWithAssociatedData(&data, frame_size, &keys, &counter, ad);
+
+    var dctr = std.atomic.Value(u64).init(0);
+    try testing.expectError(
+        error.AuthenticationFailed,
+        decryptFrame(&data, frame_size, &keys, &dctr, cluster_id),
+    );
 }
 
 test "parseKeyFile parses valid key" {

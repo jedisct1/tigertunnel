@@ -660,9 +660,14 @@ const ServerProxyContext = struct {
     kem_secret_key_store_ptr: ?*const crypto.KemSecretKeyStore,
     cluster_id: ?u128,
     max_sessions: u32,
-    /// Group for handler tasks (one per multiplexed connection)
+    active_handlers: std.atomic.Value(u32),
     handler_group: Io.Group = .init,
 };
+
+fn runServerMuxHandlerLimited(handler: *mux_session.ServerMuxHandler, active_handlers: *std.atomic.Value(u32)) void {
+    defer _ = active_handlers.fetchSub(1, .release);
+    mux_session.runServerMuxHandler(handler);
+}
 
 fn runServerProxyPair(ctx: *ServerProxyContext) void {
     const allocator = ctx.allocator;
@@ -688,6 +693,13 @@ fn runServerProxyPair(ctx: *ServerProxyContext) void {
             continue;
         };
 
+        const current = ctx.active_handlers.load(.acquire);
+        if (current >= ctx.max_sessions) {
+            log.warn("Pair {}: Max multiplexed connections reached ({}/{}), rejecting client", .{ pair_index, current, ctx.max_sessions });
+            stream.close(io);
+            continue;
+        }
+
         conn_id += 1;
         log.info("Pair {}: Accepted multiplexed connection {}", .{ pair_index, conn_id });
 
@@ -709,9 +721,12 @@ fn runServerProxyPair(ctx: *ServerProxyContext) void {
             ctx.max_sessions,
         );
 
-        ctx.handler_group.concurrent(io, mux_session.runServerMuxHandler, .{handler}) catch |err| {
+        _ = ctx.active_handlers.fetchAdd(1, .release);
+        ctx.handler_group.concurrent(io, runServerMuxHandlerLimited, .{ handler, &ctx.active_handlers }) catch |err| {
             log.err("Pair {}: Failed to spawn handler thread: {}", .{ ctx.pair_index, err });
             stream.close(io);
+            _ = ctx.active_handlers.fetchSub(1, .release);
+            allocator.destroy(handler);
             continue;
         };
     }
@@ -737,6 +752,7 @@ fn runMuxServer(
             .kem_secret_key_store_ptr = kem_secret_key_store_ptr,
             .cluster_id = config.cluster_id,
             .max_sessions = config.max_sessions,
+            .active_handlers = std.atomic.Value(u32).init(0),
         };
     }
 

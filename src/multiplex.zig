@@ -88,11 +88,11 @@ pub fn readMuxHeader(reader: *Io.Reader) Error!MuxHeader {
         return error.InvalidMagic;
     }
 
-    // Validate that the frame_type value is a valid enum member
-    const frame_type_raw: u8 = @intFromEnum(header.frame_type);
+    const frame_type_raw = mem.asBytes(&header)[@offsetOf(MuxHeader, "frame_type")];
     if (frame_type_raw > @intFromEnum(FrameType.stream_close)) {
         return error.InvalidFrameType;
     }
+    header.frame_type = @enumFromInt(frame_type_raw);
 
     return header;
 }
@@ -119,10 +119,11 @@ pub fn readMuxHeaderAndFrameHeader(
         return error.InvalidMagic;
     }
 
-    const frame_type_raw: u8 = @intFromEnum(mux_header.frame_type);
+    const frame_type_raw = mem.asBytes(&mux_header)[@offsetOf(MuxHeader, "frame_type")];
     if (frame_type_raw > @intFromEnum(FrameType.stream_close)) {
         return error.InvalidFrameType;
     }
+    mux_header.frame_type = @enumFromInt(frame_type_raw);
 
     if (mux_header.frame_type != .data) {
         return .{ .mux_header = mux_header, .frame_size = 0 };
@@ -1141,4 +1142,58 @@ pub const ConnectionPool = struct {
 
 test "MuxHeader size and layout" {
     try testing.expectEqual(@as(usize, 12), @sizeOf(MuxHeader));
+}
+
+test "readMuxHeader rejects out-of-range frame_type without trapping" {
+    var raw_bytes: [12]u8 = undefined;
+    mem.writeInt(u32, raw_bytes[0..4], magic_value, .little);
+    mem.writeInt(u32, raw_bytes[4..8], 42, .little);
+    raw_bytes[8] = 200;
+    raw_bytes[9] = 0;
+    raw_bytes[10] = 0;
+    raw_bytes[11] = 0;
+
+    var reader = Io.Reader.fixed(&raw_bytes);
+    try testing.expectError(error.InvalidFrameType, readMuxHeader(&reader));
+}
+
+test "readMuxHeader accepts all valid frame_type values" {
+    inline for (.{ FrameType.data, FrameType.stream_open, FrameType.stream_close }) |ft| {
+        var raw_bytes: [12]u8 = undefined;
+        mem.writeInt(u32, raw_bytes[0..4], magic_value, .little);
+        mem.writeInt(u32, raw_bytes[4..8], 1, .little);
+        raw_bytes[8] = @intFromEnum(ft);
+        raw_bytes[9] = 0;
+        raw_bytes[10] = 0;
+        raw_bytes[11] = 0;
+
+        var reader = Io.Reader.fixed(&raw_bytes);
+        const h = try readMuxHeader(&reader);
+        try testing.expectEqual(ft, h.frame_type);
+    }
+}
+
+test "readMuxHeader rejects bad magic" {
+    var raw_bytes: [12]u8 = @splat(0);
+    mem.writeInt(u32, raw_bytes[0..4], magic_value ^ 1, .little);
+
+    var reader = Io.Reader.fixed(&raw_bytes);
+    try testing.expectError(error.InvalidMagic, readMuxHeader(&reader));
+}
+
+test "readMuxHeaderAndFrameHeader rejects out-of-range frame_type" {
+    var raw_bytes: [12 + frame.header_size]u8 = @splat(0);
+    mem.writeInt(u32, raw_bytes[0..4], magic_value, .little);
+    mem.writeInt(u32, raw_bytes[4..8], 7, .little);
+    raw_bytes[8] = 55;
+
+    var reader = Io.Reader.fixed(&raw_bytes);
+
+    var buffer = try frame.FrameBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try testing.expectError(
+        error.InvalidFrameType,
+        readMuxHeaderAndFrameHeader(&reader, &buffer, frame.size_offset_normal),
+    );
 }

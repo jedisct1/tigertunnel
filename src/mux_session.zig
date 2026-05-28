@@ -146,29 +146,44 @@ pub const ClientMuxSession = struct {
             return error.WriteFailed;
         };
 
-        // Encrypt data frames inside the mutex to ensure encryption order matches send order
-        // (required for implicit nonce synchronization with receiver)
+        const mux_header: multiplex.MuxHeader = .{
+            .stream_id = self.stream.id,
+            .frame_type = frame_type,
+        };
+
+        var close_buffer: [frame.header_size]u8 = undefined;
+        var mux_data = data orelse &.{};
+
+        // Encrypt authenticated frames inside the mutex to ensure encryption order
+        // matches send order (required for implicit nonce synchronization).
         if (frame_type == .data) {
             if (data) |d| {
                 if (self.pool_conn.derived_keys) |*keys| {
-                    crypto.encryptFrame(d, frame_size, &keys.client_to_server, &self.pool_conn.c2s_counter) catch {
+                    crypto.encryptFrameWithAssociatedData(d, frame_size, &keys.client_to_server, &self.pool_conn.c2s_counter, mem.asBytes(&mux_header)) catch {
                         self.pool.markUnhealthy(self.pool_conn, self.io);
                         return error.WriteFailed;
                     };
                     log.debug("[{}] Encrypted client frame for server", .{self.session_id});
                 }
             }
+        } else if (frame_type == .stream_close) {
+            if (self.pool_conn.derived_keys) |*keys| {
+                @memset(close_buffer[0..], 0);
+                mem.writeInt(u32, close_buffer[@offsetOf(frame.Header, "size")..][0..4], frame.header_size, .little);
+                mem.writeInt(u32, close_buffer[@offsetOf(frame.Header, "reserved_frame")..][0..4], self.stream.id, .little);
+                close_buffer[@offsetOf(frame.Header, "reserved_frame") + 4] = @intFromEnum(frame_type);
+                crypto.encryptFrameWithAssociatedData(close_buffer[0..], frame.header_size, &keys.client_to_server, &self.pool_conn.c2s_counter, mem.asBytes(&mux_header)) catch {
+                    self.pool.markUnhealthy(self.pool_conn, self.io);
+                    return error.WriteFailed;
+                };
+                mux_data = close_buffer[0..];
+            }
         }
 
         var write_buf: [io_buffer_size]u8 = undefined;
         var writer = stream.writer(self.io, &write_buf);
 
-        const mux_header: multiplex.MuxHeader = .{
-            .stream_id = self.stream.id,
-            .frame_type = frame_type,
-        };
-
-        multiplex.writeMuxFrame(&writer.interface, mux_header, data orelse &.{}) catch {
+        multiplex.writeMuxFrame(&writer.interface, mux_header, mux_data) catch {
             self.pool.markUnhealthy(self.pool_conn, self.io);
             return error.WriteFailed;
         };
@@ -415,10 +430,26 @@ pub const ServerMuxHandler = struct {
                     };
                 },
                 .stream_close => {
+                    if (incoming_keys) |keys| {
+                        const close_frame_size = frame.readEncryptedFrame(&reader.interface, &frame_buffer) catch |err| {
+                            log.warn("[conn {}] Error reading stream close for stream {}: {}", .{ self.conn_id, mux_header.stream_id, err });
+                            continue;
+                        };
+                        crypto.decryptFrameWithAssociatedData(frame_buffer.data, close_frame_size, keys, &self.c2s_counter_recv, self.cluster_id orelse 0, mem.asBytes(&mux_header)) catch |err| {
+                            log.warn("[conn {}] Failed to authenticate stream close for stream {}: {}", .{ self.conn_id, mux_header.stream_id, err });
+                            continue;
+                        };
+                        const authenticated_stream_id = mem.readInt(u32, frame_buffer.data[@offsetOf(frame.Header, "reserved_frame")..][0..4], .little);
+                        const authenticated_frame_type = frame_buffer.data[@offsetOf(frame.Header, "reserved_frame") + 4];
+                        if (authenticated_stream_id != mux_header.stream_id or authenticated_frame_type != @intFromEnum(multiplex.FrameType.stream_close)) {
+                            log.warn("[conn {}] Stream close authentication mismatch for stream {}", .{ self.conn_id, mux_header.stream_id });
+                            continue;
+                        }
+                    }
                     self.handleStreamClose(mux_header.stream_id);
                 },
                 .data => {
-                    self.handleData(&reader.interface, &frame_buffer, mux_header.stream_id, incoming_keys) catch |err| {
+                    self.handleData(&reader.interface, &frame_buffer, mux_header, incoming_keys) catch |err| {
                         log.warn("[conn {}] Error handling data for stream {}: {}", .{ self.conn_id, mux_header.stream_id, err });
                     };
                 },
@@ -465,9 +496,23 @@ pub const ServerMuxHandler = struct {
         self: *ServerMuxHandler,
         reader: *Io.Reader,
         buffer: *frame.FrameBuffer,
-        stream_id: u32,
+        mux_header: multiplex.MuxHeader,
         incoming_keys: ?*const crypto.DirectionalKey,
     ) !void {
+        const stream_id = mux_header.stream_id;
+
+        const frame_size = if (incoming_keys != null)
+            try frame.readEncryptedFrame(reader, buffer)
+        else
+            try frame.readFrame(reader, buffer);
+
+        log.debug("[conn {}] Received {} byte frame for stream {}", .{ self.conn_id, frame_size, stream_id });
+
+        if (incoming_keys) |keys| {
+            try crypto.decryptFrameWithAssociatedData(buffer.data, frame_size, keys, &self.c2s_counter_recv, self.cluster_id orelse 0, mem.asBytes(&mux_header));
+            log.debug("[conn {}] Decrypted frame for stream {}", .{ self.conn_id, stream_id });
+        }
+
         const stream = self.registry.getStream(stream_id) orelse {
             log.warn("[conn {}] Data for unknown stream {}", .{ self.conn_id, stream_id });
             return error.StreamNotFound;
@@ -478,19 +523,6 @@ pub const ServerMuxHandler = struct {
             log.warn("[conn {}] No backend connection for stream {}", .{ self.conn_id, stream_id });
             return error.StreamNotFound;
         };
-
-        // Read the frame (encrypted format since it came from client)
-        const frame_size = if (incoming_keys != null)
-            try frame.readEncryptedFrame(reader, buffer)
-        else
-            try frame.readFrame(reader, buffer);
-
-        log.debug("[conn {}] Received {} byte frame for stream {}", .{ self.conn_id, frame_size, stream_id });
-
-        if (incoming_keys) |keys| {
-            try crypto.decryptFrame(buffer.data, frame_size, keys, &self.c2s_counter_recv, self.cluster_id orelse 0);
-            log.debug("[conn {}] Decrypted frame for stream {}", .{ self.conn_id, stream_id });
-        }
 
         var backend_write_buf: [io_buffer_size]u8 = undefined;
         var backend_writer = backend_stream.writer(self.io, &backend_write_buf);
@@ -507,31 +539,33 @@ pub const ServerMuxHandler = struct {
         else
             null;
 
+        const response_mux_header: multiplex.MuxHeader = .{
+            .stream_id = stream_id,
+            .frame_type = .data,
+        };
+
         if (outgoing_keys) |keys| {
-            crypto.encryptFrame(buffer.data, response_size, keys, &self.s2c_counter) catch |err| {
+            crypto.encryptFrameWithAssociatedData(buffer.data, response_size, keys, &self.s2c_counter, mem.asBytes(&response_mux_header)) catch |err| {
                 log.warn("[conn {}] Invalid padding in backend response for stream {}: {}", .{ self.conn_id, stream_id, err });
                 return err;
             };
             log.debug("[conn {}] Encrypted response for stream {}", .{ self.conn_id, stream_id });
         }
 
-        self.sendResponse(stream_id, buffer.data[0..response_size]) catch |err| {
+        self.sendResponse(response_mux_header, buffer.data[0..response_size]) catch |err| {
             log.warn("[conn {}] Error sending response for stream {}: {}", .{ self.conn_id, stream_id, err });
             return err;
         };
     }
 
-    fn sendResponse(self: *ServerMuxHandler, stream_id: u32, data: []const u8) !void {
+    fn sendResponse(self: *ServerMuxHandler, mux_header: multiplex.MuxHeader, data: []const u8) !void {
         self.write_mutex.lockUncancelable(self.io);
         defer self.write_mutex.unlock(self.io);
 
         var write_buf: [io_buffer_size]u8 = undefined;
         var writer = self.mux_stream.writer(self.io, &write_buf);
 
-        multiplex.writeMuxFrame(&writer.interface, .{
-            .stream_id = stream_id,
-            .frame_type = .data,
-        }, data) catch return error.WriteFailed;
+        multiplex.writeMuxFrame(&writer.interface, mux_header, data) catch return error.WriteFailed;
     }
 
     fn cleanup(self: *ServerMuxHandler) void {
@@ -612,7 +646,7 @@ pub fn clientPoolReaderThread(
             // Decrypt in reader thread to maintain counter synchronization
             // (frames must be decrypted in the order they were encrypted)
             if (pool_conn.derived_keys) |*keys| {
-                crypto.decryptFrame(frame_buffer.data, fs, &keys.server_to_client, &pool_conn.s2c_counter_recv, pool.cluster_id) catch |err| {
+                crypto.decryptFrameWithAssociatedData(frame_buffer.data, fs, &keys.server_to_client, &pool_conn.s2c_counter_recv, pool.cluster_id, mem.asBytes(&mux_header)) catch |err| {
                     log.warn("Connection {} failed to decrypt server response: {}", .{ pool_conn.index, err });
                     pool.markUnhealthy(pool_conn, io);
                     break;
