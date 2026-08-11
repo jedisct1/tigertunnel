@@ -19,7 +19,7 @@ TigerBeetle frames are individually encrypted and sent and received over a confi
 ### Build
 
 ```sh
-zig build -Doptimize=ReleaseFast
+zig build --release=fast
 ```
 
 This creates a `zig-out/bin/tigertunnel` executable that can be copied anywhere.
